@@ -1,0 +1,16 @@
+<article>
+    <ul>
+      <li class='fs-3'>
+        {{ post.location }}       
+      </li>
+      <li class='fs-3'>
+        {{ post.date }}
+      </li>
+      <li class='fs-3'>
+        Категория: <a href="{% url 'blog:category_posts' post.category %}">{{ post.category }}</a>
+      </li>
+    </ul>         
+    <p class='fs-4'>
+      {{ post.text }}
+    </p>          
+</article> 
