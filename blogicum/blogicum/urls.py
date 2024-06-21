@@ -31,7 +31,7 @@ urlpatterns = [
     path("", include("blog.urls")),
     path("", include("pages.urls")),
     path(
-        'auth/registration/', 
+        'auth/registration/',
         CreateView.as_view(
             template_name='registration/registration_form.html',
             form_class=UserCreationForm,
