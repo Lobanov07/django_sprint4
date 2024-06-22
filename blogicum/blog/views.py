@@ -1,31 +1,43 @@
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.db.models import Count
-from blog.models import Post, Category, Comment
 from django.http import Http404
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import (
     ListView, CreateView, UpdateView, DeleteView, DetailView)
-from .forms import PostForm, CommentForm
 from django.urls import reverse
+
+from .forms import PostForm, CommentForm
+from .models import Post, Category, Comment
 
 POSTS_PER_PAGE = 10
 
 
-def post_filter():
+def annotate_total_amount(queryset):
+    return queryset.annotate(comment_count=Count('comments'))
 
-    return Post.objects.select_related(
-        'author',
-        'location',
-        'category',
-    ).filter(
-        is_published=True,
-        pub_date__lte=timezone.now(),
-        category__is_published=True,
-    ).annotate(
-        comment_count=Count('comments')
-    ).order_by('-pub_date')
+
+def select_related_fields(queryset):
+    return queryset.select_related('author', 'location', 'category',)
+
+
+def order_by_field(queryset, field):
+    return queryset.order_by(field)
+
+
+def post_filter(self, target=None):
+    queryset = annotate_total_amount(Post.objects)
+    queryset = select_related_fields(queryset)
+    queryset = order_by_field(queryset, '-pub_date')
+    if target == 'profile':
+        queryset = queryset.filter(author=self.author)
+    else:
+        queryset = queryset.filter(
+            is_published=True,
+            pub_date__lte=timezone.now(),
+            category__is_published=True,)
+    return queryset
 
 
 User = get_user_model()
@@ -66,15 +78,18 @@ class SetAutorMixin:
         return super().form_valid(form)
 
 
-class HomePage(ListView):
+class PostListMixin(ListView):
+    paginate_by = POSTS_PER_PAGE
+
+
+class HomePage(PostListMixin):
     model = Post
 
     template_name = 'blog/index.html'
     ordering = 'id'
-    paginate_by = POSTS_PER_PAGE
 
     def get_queryset(self):
-        return post_filter()
+        return post_filter(self)
 
 
 class PostCreateView(
@@ -87,9 +102,8 @@ class PostCreateView(
     template_name = 'blog/create.html'
 
 
-class ProfilePostListView(ListView):
+class ProfilePostListView(PostListMixin):
     template_name = 'blog/profile.html'
-    paginate_by = POSTS_PER_PAGE
     model = Post
 
     def get_queryset(self):
@@ -97,15 +111,8 @@ class ProfilePostListView(ListView):
             User,
             username=self.kwargs['username']
         )
-        return Post.objects.select_related(
-            'author',
-            'location',
-            'category',
-        ).filter(
-            author=self.author
-        ).annotate(
-            comment_count=Count('comments')
-        ).order_by('-pub_date')
+
+        return post_filter(self, 'profile')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -132,11 +139,7 @@ class PostDetailView(PostMixin, DetailView):
     pk_url_kwarg = 'post_id'
 
     def get_queryset(self):
-        return super().get_queryset().select_related(
-            'author',
-            'location',
-            'category',
-        )
+        return select_related_fields(super().get_queryset())
 
     def get_object(self, queryset=None):
 
@@ -184,7 +187,7 @@ class CommentCreateView(LoginRequiredMixin, CommentFormMixin, CreateView):
     def form_valid(self, form):
         form.instance.author = self.request.user
         form.instance.post = get_object_or_404(
-            post_filter(),
+            post_filter(self),
             pk=self.kwargs['post_id']
         )
         return super().form_valid(form)
@@ -228,13 +231,12 @@ class PostDeleteView(
         return context
 
 
-class CategoryListView(ListView):
+class CategoryListView(PostListMixin):
 
     template_name = 'blog/category.html'
-    paginate_by = POSTS_PER_PAGE
 
     def get_queryset(self):
-        return post_filter().filter(
+        return post_filter(self).filter(
             category__slug=self.kwargs['category_slug'],
         )
 
